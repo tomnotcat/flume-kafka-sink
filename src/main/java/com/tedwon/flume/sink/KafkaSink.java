@@ -67,6 +67,7 @@ public class KafkaSink extends AbstractSink implements Configurable {
 
         Channel channel = getChannel();
         Transaction tx = null;
+
         try {
             tx = channel.getTransaction();
             tx.begin();
@@ -96,12 +97,13 @@ public class KafkaSink extends AbstractSink implements Configurable {
                 tx.commit();// commit to drop bad event, otherwise it will enter dead loop.
             }
 
-            throw new EventDeliveryException(e);
+            //throw new EventDeliveryException(e);
         } finally {
             if (tx != null) {
                 tx.close();
             }
         }
+
         return status;
     }
 }
