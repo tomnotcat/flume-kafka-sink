@@ -88,8 +88,14 @@ public class KafkaSink extends AbstractSink implements Configurable, Runnable {
 //                logger.debug(line);
 
                 byte[] body = event.getBody();
+                Message msg;
 
-                Message msg = new Message(body);
+                while (msgQueue.remainingCapacity() == 0) {
+                    logger.error("message queue full, drop old message");
+                    msg = msgQueue.take();
+                }
+
+                msg = new Message(body);
                 msgQueue.put(msg);
             } else {
                 status = Status.BACKOFF;
