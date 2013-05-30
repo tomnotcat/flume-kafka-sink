@@ -15,6 +15,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Properties;
+import java.lang.Runnable;
+import java.lang.Thread;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * Kafka Flume Sink Class.
@@ -23,7 +27,7 @@ import java.util.Properties;
  * @author <a href="iamtedwon@gmail.com">Ted Won</a>
  * @version 1.0
  */
-public class KafkaSink extends AbstractSink implements Configurable {
+public class KafkaSink extends AbstractSink implements Configurable, Runnable {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaSink.class);
 
@@ -34,6 +38,8 @@ public class KafkaSink extends AbstractSink implements Configurable {
     private Properties props;
 
     private Producer<String, Message> producer;
+    final private Thread workThread = new Thread(this);
+    final private BlockingQueue<Message> msgQueue = new LinkedBlockingQueue<Message>(10240);
 
     @Override
     public void configure(Context context) {
@@ -52,10 +58,13 @@ public class KafkaSink extends AbstractSink implements Configurable {
 
         ProducerConfig config = new ProducerConfig(props);
         producer = new Producer<String, Message>(config);
+
+        workThread.start();
     }
 
     @Override
     public synchronized void stop() {
+        workThread.stop();
         super.stop();
         producer.close();
     }
@@ -80,12 +89,8 @@ public class KafkaSink extends AbstractSink implements Configurable {
 
                 byte[] body = event.getBody();
 
-                // Send a single messae
-                // The message is sent to a randomly selected partition registered in ZK
-                Message msg = new Message (body);
-                ProducerData<String, Message> kafkaData = new ProducerData<String, Message>(this.topic, msg);
-                producer.send(kafkaData);
-
+                Message msg = new Message(body);
+                msgQueue.put(msg);
             } else {
                 status = Status.BACKOFF;
             }
@@ -105,5 +110,21 @@ public class KafkaSink extends AbstractSink implements Configurable {
         }
 
         return status;
+    }
+
+    public void run() {
+        while (true) {
+            try {
+                Message msg = msgQueue.take();
+
+                ProducerData<String, Message> kafkaData = new ProducerData<String, Message>(this.topic, msg);
+
+                // Send a single messae
+                // The message is sent to a randomly selected partition registered in ZK
+                producer.send(kafkaData);
+            } catch (Exception e) {
+                logger.error("can't send message, drop it!", e);
+            }
+        }
     }
 }
